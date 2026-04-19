@@ -2,6 +2,8 @@ package main
 
 import (
 	"App_Servidor_Imagenes/pkg/images"
+	"App_Servidor_Imagenes/pkg/monitor"
+	"App_Servidor_Imagenes/pkg/orchestrator"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -13,7 +15,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/shirou/gopsutil/cpu"
+	_ "embed"
 )
 
 type PageData struct {
@@ -21,25 +23,21 @@ type PageData struct {
 	Hostname    string
 	CourseName  string
 	StudentName string
-	CPUUsage    float64
+	CPUUsage   float64
 	StressLevel int
+	UpperThreshold float64
+	LowerThreshold float64
+	Interval    int
 }
 
-// Umbrales y configuración
+type Response struct {
+	Status string `json:"status"`
+}
+
 var (
-	upperThreshold = 80.0 // %
-	lowerThreshold = 20.0 // %
-	interval       = time.Minute
-	stressLevel    = 0
+	stressLevel int
+	orch       *orchestrator.Orchestrator
 )
-
-type VMStatus struct {
-	Name   string `json:"name"`
-	IP     string `json:"ip"`
-	Active bool   `json:"active"`
-}
-
-var vmList []VMStatus // lista de VMs activas
 
 func main() {
 	port := 8000
@@ -49,25 +47,12 @@ func main() {
 		}
 	}
 
-	// Obtener directorio del ejecutable
-	exePath, err := os.Executable()
-	if err != nil {
-		log.Printf("No se pudo obtener la ruta del ejecutable: %v", err)
-		exePath = ""
-	}
+	hostname, _ := os.Hostname()
+
+	exePath, _ := os.Executable()
 	exeDir := filepath.Dir(exePath)
 
-	// Hostname
-	hostname, err := os.Hostname()
-	if err != nil {
-		log.Printf("No se pudo obtener el hostname: %v", err)
-		hostname = "localhost"
-	}
-
-	// Plantilla
 	templatePath := filepath.Join(exeDir, "templates", "index.html")
-
-	// Si no existe en el directorio del ejecutable, usar ruta relativa al proyecto
 	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
 		templatePath = "templates/index.html"
 	}
@@ -78,177 +63,135 @@ func main() {
 		},
 	}).ParseFiles(templatePath)
 	if err != nil {
-		log.Fatalf("Error al cargar la plantilla %s: %v", templatePath, err)
+		log.Fatalf("Error loading template: %v", err)
 	}
 
-	// Endpoint para estado del sistema
-	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		usage := getCPUUsage()
-		w.Header().Set("Content-Type", "application/json")
+	orch = orchestrator.Init("127.0.0.1", "/etc/haproxy/haproxy.cfg")
 
-		// Devolver CPU, nivel de estrés y lista de VMs
-		data := struct {
-			CPU    float64    `json:"cpu"`
-			Stress int        `json:"stress"`
-			VMs    []VMStatus `json:"vms"`
-		}{
-			CPU:    usage,
-			Stress: stressLevel,
-			VMs:    vmList,
-		}
+	go monitor.StartMonitoring(
+		func() { scaleUp() },
+		func() { scaleDown() },
+	)
 
-		json.NewEncoder(w).Encode(data)
-	})
-
-	// Endpoint principal
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		imageDir := filepath.Join(exeDir, "ImagenesApp")
-
-		// Si no existe en el directorio del ejecutable, usar ruta relativa al proyecto
 		if _, err := os.Stat(imageDir); os.IsNotExist(err) {
 			imageDir = "ImagenesApp"
 		}
 
 		imageInfos, err := images.GetRandomBase64Images(imageDir, 3)
 		if err != nil {
-			log.Printf("Error al cargar imágenes: %v", err)
-			http.Error(w, "Error al cargar imágenes: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Error loading images", http.StatusInternalServerError)
 			return
 		}
 
-		usage := getCPUUsage()
+		cfg := monitor.GetConfig()
 
 		data := PageData{
 			Images:      imageInfos,
 			Hostname:    hostname,
-			CourseName:  "Cloud Computing",
-			StudentName: "David Alfonso Posso Cano y Santiago Navarro",
-			CPUUsage:    usage,
+			CourseName: "Cloud Computing",
+			StudentName: "David Alfonso Posso Cano & Santiago Navarro",
+			CPUUsage:   monitor.GetUsage(),
 			StressLevel: stressLevel,
+			UpperThreshold: cfg.UpperThreshold,
+			LowerThreshold: cfg.LowerThreshold,
+			Interval:    int(cfg.Interval.Seconds()),
 		}
 
-		if err := tmpl.Execute(w, data); err != nil {
-			log.Printf("Error al ejecutar la plantilla: %v", err)
-		}
+		tmpl.Execute(w, data)
 	})
 
-	// Modificar el endpoint de stress
+	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			CPU    float64                    `json:"cpu"`
+			Stress int                      `json:"stress"`
+			VMs    []orchestrator.Server    `json:"vms"`
+		}{
+			CPU:    monitor.GetUsage(),
+			Stress: stressLevel,
+			VMs:    orch.GetServers(),
+		})
+	})
+
+	http.HandleFunc("/cpu", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"cpu": %.2f, "stress": %d}`, monitor.GetUsage(), stressLevel)
+	})
+
 	http.HandleFunc("/stress", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			levelStr := r.FormValue("level")
-			level, _ := strconv.Atoi(levelStr)
+			level, _ := strconv.Atoi(r.FormValue("level"))
 			stressLevel = level
-			adjustStress(level)
+			applyStress(level)
+
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"status":"ok","stress":%d}`, level)
+			json.NewEncoder(w).Encode(Response{Status: "ok"})
 		}
 	})
 
-	// Endpoint para configurar umbrales e intervalos
 	http.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			upperStr := r.FormValue("upper")
-			lowerStr := r.FormValue("lower")
-			intervalStr := r.FormValue("interval")
+			cfg := monitor.Config{}
 
-			if val, err := strconv.ParseFloat(upperStr, 64); err == nil {
-				upperThreshold = val
+			if u, err := strconv.ParseFloat(r.FormValue("upper"), 64); err == nil {
+				cfg.UpperThreshold = u
 			}
-			if val, err := strconv.ParseFloat(lowerStr, 64); err == nil {
-				lowerThreshold = val
+			if l, err := strconv.ParseFloat(r.FormValue("lower"), 64); err == nil {
+				cfg.LowerThreshold = l
 			}
-			if val, err := strconv.Atoi(intervalStr); err == nil {
-				interval = time.Duration(val) * time.Second
+			if i, err := strconv.Atoi(r.FormValue("interval")); err == nil {
+				cfg.Interval = time.Duration(i) * time.Second
 			}
+
+			monitor.SetConfig(cfg)
 
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"status":"ok","upper":%.2f,"lower":%.2f,"interval":%d}`,
-				upperThreshold, lowerThreshold, int(interval.Seconds()))
+			json.NewEncoder(w).Encode(cfg)
 		}
 	})
-
-	// Nuevo endpoint para CPU en tiempo real
-	http.HandleFunc("/cpu", func(w http.ResponseWriter, r *http.Request) {
-		usage := getCPUUsage()
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"cpu": %.2f, "stress": %d}`, usage, stressLevel)
-	})
-
-	// Lanzar monitoreo de CPU
-	go monitorCPU()
 
 	addr := fmt.Sprintf(":%d", port)
-	fmt.Printf("Servidor corriendo en http://localhost%s\n", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		fmt.Printf("Error al iniciar el servidor: %v\n", err)
-		os.Exit(1)
-	}
-
+	log.Printf("Server running on http://localhost%s", addr)
+	log.Printf("HAProxy orchestration enabled")
+	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
-// ------------------- FUNCIONES AUXILIARES -------------------
-
-func getCPUUsage() float64 {
-	usage, _ := cpu.Percent(0, false)
-	if len(usage) > 0 {
-		return usage[0]
+func applyStress(level int) {
+	if level <= 0 {
+		exec.Command("pkill", "-f", "stress-ng").Run()
+		log.Println("Stress stopped")
+		return
 	}
-	return 0.0
-}
-
-func monitorCPU() {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	var highCount, lowCount int
-
-	for range ticker.C {
-		val := getCPUUsage()
-		if val > upperThreshold {
-			highCount++
-			lowCount = 0
-			if highCount*5 >= int(interval.Seconds()) {
-				scaleUp()
-				highCount = 0
-			}
-		} else if val < lowerThreshold {
-			lowCount++
-			highCount = 0
-			if lowCount*5 >= int(interval.Seconds()) {
-				scaleDown()
-				lowCount = 0
-			}
-		} else {
-			highCount, lowCount = 0, 0
-		}
-
-	}
-
+	log.Printf("Applying stress level %d", level)
+	exec.Command("sh", "-c", fmt.Sprintf("stress-ng --cpu %d --timeout 60s &", level)).Run()
 }
 
 func scaleUp() {
-	log.Println("Escalando hacia arriba...")
-	vmName := fmt.Sprintf("vm_%d", time.Now().Unix())
-	vmIP := "192.168.1.50" // aquí deberías obtener la IP real de la VM creada
-	vmList = append(vmList, VMStatus{Name: vmName, IP: vmIP, Active: true})
+	log.Println("Scaling UP - CPU above threshold")
+	vmName := fmt.Sprintf("aux-%d", time.Now().Unix())
+	vmIP := fmt.Sprintf("192.168.1.%d", 50+orch.GetActiveCount())
+	vmPort := 8000
 
-	exec.Command("sh", "./scripts/crear_vm.sh").Run()
-	exec.Command("sh", "./scripts/haproxy_add.sh", vmName, vmIP).Run()
+	if err := orch.AddServer(vmName, vmIP, vmPort); err != nil {
+		log.Printf("Error adding server: %v", err)
+	}
+
+	exec.Command("sh", "./scripts/crear_vm.sh", vmName).Run()
 }
 
 func scaleDown() {
-	log.Println("Escalando hacia abajo...")
-	if len(vmList) > 0 {
-		vm := vmList[len(vmList)-1]
-		vmList = vmList[:len(vmList)-1]
-
-		exec.Command("sh", "./scripts/haproxy_remove.sh", vm.Name).Run()
-		exec.Command("sh", "./scripts/eliminar_vm.sh", vm.Name).Run()
+	log.Println("Scaling DOWN - CPU below threshold")
+	servers := orch.GetServers()
+	if len(servers) == 0 {
+		return
 	}
-}
 
-func adjustStress(level int) {
-	log.Printf("Ajustando stress-ng al nivel %d...\n", level)
-	// Ejemplo: lanzar stress-ng con X workers
-	exec.Command("sh", "-c", fmt.Sprintf("stress-ng --cpu %d --timeout 60s", level)).Run()
+	vm := servers[len(servers)-1]
+	if err := orch.RemoveServer(vm.Name); err != nil {
+		log.Printf("Error removing server: %v", err)
+	}
+
+	exec.Command("sh", "./scripts/eliminar_vm.sh", vm.Name).Run()
 }

@@ -3,126 +3,337 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Servidor de Imágenes y gestión de carga</title>
+    <title>CloudServe - Servidor de Imágenes</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-dark: #4338ca;
+            --secondary: #64748b;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --dark: #1e293b;
+            --light: #f8fafc;
+            --card-bg: #ffffff;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+        }
         body {
-            background-color: #f8f9fa;
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #f0f4ff 0%, #e0e7ff 100%);
+            min-height: 100vh;
             padding-top: 20px;
+            padding-bottom: 60px;
         }
-        .image-container {
-            margin-bottom: 30px;
-            text-align: center;
+        .navbar {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: var(--shadow);
         }
-        .image-container img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        .brand {
+            font-weight: 700;
+            color: var(--primary);
+            font-size: 1.5rem;
         }
-        .card {
+        .brand i {
+            margin-right: 8px;
+        }
+        .main-card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: var(--shadow-lg);
             border: none;
-            background-color: white;
+            overflow: hidden;
+        }
+        .main-card .card-header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 24px;
+            border: none;
+        }
+        .stat-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            border: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--dark);
+        }
+        .cpu-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .cpu-low { background: var(--success); }
+        .cpu-medium { background: var(--warning); }
+        .cpu-high { background: var(--danger); }
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 24px;
+            padding: 24px 0;
+        }
+        .image-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .image-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+        .image-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+        .image-card .card-body {
+            padding: 16px;
+        }
+        .image-card .filename {
+            font-weight: 600;
+            color: var(--dark);
+            font-size: 0.875rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .config-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            border: none;
+        }
+        .config-card .card-header {
+            background: transparent;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 16px 20px;
+            font-weight: 600;
+            color: var(--dark);
+        }
+        .form-label {
+            font-weight: 500;
+            color: var(--dark);
+            font-size: 0.875rem;
+        }
+        .form-control:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+        .btn-primary {
+            background: var(--primary);
+            border: none;
+            padding: 10px 24px;
+            font-weight: 600;
+        }
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+        .btn-success {
+            background: var(--success);
+            border: none;
+        }
+        .vm-table {
+            background: var(--card-bg);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+        .vm-table thead {
+            background: var(--dark);
+            color: white;
+        }
+        .vm-table th, .vm-table td {
+            padding: 14px 20px;
+        }
+        .vm-status {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .vm-active {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .vm-inactive {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .slider-container {
+            padding: 0 20px;
+        }
+        .slider-value {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        input[type="range"] {
+            height: 8px;
+            border-radius: 4px;
+            background: #e2e8f0;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
+            border: 3px solid white;
+            box-shadow: var(--shadow);
         }
     </style>
 </head>
 <body>
-<div class="container">
-    <div class="row justify-content-center mb-4">
-        <div class="col-md-8 text-center">
-            <h1 class="display-4">Servidor de Imágenes - {{.CourseName}}</h1>
-            <p class="lead text-muted">Estudiante: {{.StudentName}}</p>
-            <p class="text-muted">Host: {{.Hostname}}</p>
-            <p class="fw-bold">Uso de CPU actual: <span id="cpuUsage">{{printf "%.2f" .CPUUsage}}</span>%</p>
+<nav class="navbar navbar-expand-lg navbar-light fixed-top">
+    <div class="container">
+        <a class="navbar-brand" href="#">
+            <i class="bi bi-cloud-fill"></i>CloudServe
+        </a>
+        <div class="d-flex align-items-center">
+            <span class="text-muted me-3">
+                <i class="bi bi-person-fill"></i> {{.StudentName}}
+            </span>
+            <span class="badge bg-primary-subtle text-primary">
+                <i class="bi bi-pc"></i> {{.Hostname}}
+            </span>
+        </div>
+    </div>
+</nav>
+
+<div class="container" style="margin-top: 80px;">
+    <div class="main-card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <h4 class="mb-1">{{.CourseName}}</h4>
+                <p class="mb-0 opacity-75">Gestión de carga con HAProxy</p>
+            </div>
+            <div class="text-end">
+                <div class="d-flex align-items-center justify-content-end mb-2">
+                    <span class="cpu-indicator" id="cpuIndicator"></span>
+                    <span class="h3 mb-0" id="cpuUsage">{{printf "%.1f" .CPUUsage}}%</span>
+                </div>
+                <small class="opacity-75">Uso de CPU</small>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="image-grid">
+                {{range .Images}}
+                <div class="image-card">
+                    <img src="{{ .Base64Data | safeURL }}" alt="{{ .Filename }}">
+                    <div class="card-body">
+                        <p class="filename"><i class="bi bi-image me-2"></i>{{ .Filename }}</p>
+                    </div>
+                </div>
+                {{end}}
+            </div>
         </div>
     </div>
 
-    <div class="row">
-        {{range .Images}}
-        <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card shadow-sm">
-                <div class="image-container">
-                    <img src="{{ .Base64Data | safeURL }}" alt="{{ .Filename }}" class="img-fluid">
-                    <p class="mt-2 mb-0 font-weight-bold">{{ .Filename }}</p>
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="config-card">
+                <div class="card-header">
+                    <i class="bi bi-sliders me-2"></i>Configuración de Umbrales
+                </div>
+                <div class="card-body">
+                    <form id="configForm" method="POST" action="/config">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label for="upper" class="form-label">Umbral Superior (%)</label>
+                                <input type="number" step="0.1" class="form-control" id="upper" name="upper" value="80">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="lower" class="form-label">Umbral Inferior (%)</label>
+                                <input type="number" step="0.1" class="form-control" id="lower" name="lower" value="20">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="interval" class="form-label">Intervalo (seg)</label>
+                                <input type="number" class="form-control" id="interval" name="interval" value="60">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success mt-3">
+                            <i class="bi bi-check-circle me-2"></i>Actualizar
+                        </button>
+                    </form>
+                    <hr>
+                    <small class="text-muted">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Actual: Superior <span id="upperVal">80</span>% · Inferior <span id="lowerVal">20</span>% · Intervalo <span id="intervalVal">60</span>s
+                    </small>
                 </div>
             </div>
         </div>
-        {{end}}
-    </div>
-    <!-- Configuración de umbrales -->
-    <div class="row justify-content-center mt-5">
-        <div class="col-md-8">
-            <div class="card shadow-sm p-4">
-                <h4 class="mb-3">Configuración de umbrales</h4>
-                <form id="configForm" method="POST" action="/config">
-                    <div class="mb-3">
-                        <label for="upper" class="form-label">Umbral superior (%)</label>
-                        <input type="number" step="0.1" class="form-control" id="upper" name="upper" value="{{printf "%.2f" .CPUUsage}}">
-                    </div>
-                    <div class="mb-3">
-                        <label for="lower" class="form-label">Umbral inferior (%)</label>
-                        <input type="number" step="0.1" class="form-control" id="lower" name="lower" value="20">
-                    </div>
-                    <div class="mb-3">
-                        <label for="interval" class="form-label">Intervalo mínimo(segundos) para realizar escalado</label>
-                        <input type="number" class="form-control" id="interval" name="interval" value="60">
-                    </div>
-                    <button type="submit" class="btn btn-success">Actualizar configuración</button>
-                </form>
-                <p class="mt-3">Configuración actual:
-                    Superior <span id="upperVal">{{printf "%.2f" .CPUUsage}}</span>% |
-                    Inferior <span id="lowerVal">20</span>% |
-                    Intervalo <span id="intervalVal">60</span>s
-                </p>
+
+        <div class="col-lg-6">
+            <div class="config-card">
+                <div class="card-header">
+                    <i class="bi bi-lightning-charge me-2"></i>Control de Carga (stress-ng)
+                </div>
+                <div class="card-body slider-container">
+                    <form id="stressForm" method="POST" action="/stress">
+                        <div class="text-center mb-3">
+                            <div class="slider-value" id="stressValue">{{.StressLevel}}</div>
+                            <small class="text-muted">Nivel de estrés</small>
+                        </div>
+                        <input type="range" class="form-range w-100" min="0" max="10" step="1" id="stressSlider" name="level" value="{{.StressLevel}}">
+                        <div class="d-flex justify-content-between text-muted small mb-3">
+                            <span>0</span>
+                            <span>5</span>
+                            <span>10</span>
+                        </div>
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-play-fill me-2"></i>Aplicar Carga
+                            </button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
 
-
-
-    <!-- Control de stress-ng -->
-    <div class="row justify-content-center mt-5">
-        <div class="col-md-8">
-            <div class="card shadow-sm p-4">
-                <h4 class="mb-3">Control de carga con stress-ng</h4>
-                <form id="stressForm" method="POST" action="/stress">
-                    <label for="stressSlider" class="form-label">Nivel de estrés:</label>
-                    <input type="range" class="form-range" min="0" max="10" step="1" id="stressSlider" name="level" value="{{.StressLevel}}">
-                    <div class="d-flex justify-content-between">
-                        <span>0</span>
-                        <span>10</span>
-                    </div>
-                    <p class="mt-2">Nivel actual: <span id="stressValue">{{.StressLevel}}</span></p>
-                    <button type="submit" class="btn btn-primary mt-3">Aplicar carga</button>
-                </form>
-            </div>
+    <div class="config-card mt-4">
+        <div class="card-header">
+            <i class="bi bi-grid-3x3-gap me-2"></i>Estado del Sistema (Orquestación HAProxy)
         </div>
-    </div>
-
-    <!-- Estado del sistema -->
-    <div class="row justify-content-center mt-5">
-        <div class="col-md-10">
-            <div class="card shadow-sm p-4">
-                <h4 class="mb-3">Estado del sistema</h4>
-                <table class="table table-striped">
-                    <thead>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead>
                     <tr>
-                        <th>Nombre VM</th>
-                        <th>IP</th>
-                        <th>Estado</th>
+                        <th><i class="bi bi-server me-2"></i>Servidor</th>
+                        <th><i class="bi bi-hdd-network me-2"></i>IP</th>
+                        <th><i class="bi bi-power me-2"></i>Estado</th>
+                        <th><i class="bi bi-graph-up me-2"></i>CPU</th>
                     </tr>
-                    </thead>
-                    <tbody id="vmTable">
-                    <!-- Se llenará dinámicamente -->
-                    </tbody>
-                </table>
-            </div>
+                </thead>
+                <tbody id="vmTable">
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
 
 
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     const slider = document.getElementById("stressSlider");
     const output = document.getElementById("stressValue");
@@ -132,74 +343,62 @@
 </script>
 
 <script>
-    const configForm = document.getElementById("configForm");
-    configForm.addEventListener("submit", async function(e) {
+    document.getElementById("configForm").addEventListener("submit", async function(e) {
         e.preventDefault();
-        const formData = new FormData(configForm);
         const res = await fetch("/config", {
             method: "POST",
-            body: formData
+            body: new FormData(this)
         });
         const data = await res.json();
-        document.getElementById("upperVal").textContent = data.upper.toFixed(2);
-        document.getElementById("lowerVal").textContent = data.lower.toFixed(2);
+        document.getElementById("upperVal").textContent = data.upper.toFixed(1);
+        document.getElementById("lowerVal").textContent = data.lower.toFixed(1);
         document.getElementById("intervalVal").textContent = data.interval;
     });
-</script>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
-<script>
-    // Actualizar CPU cada n segundos
-    async function updateCPU() {
-        try {
-            const res = await fetch("/cpu");
-            const data = await res.json();
-            document.getElementById("cpuUsage").textContent = data.cpu.toFixed(2);
-            document.getElementById("stressValue").textContent = data.stress;
-        } catch (e) {
-            console.error("Error obteniendo CPU:", e);
-        }
-    }
-    setInterval(updateCPU, 1000);
-
-    // Interceptar envío del formulario de stress
-    const form = document.getElementById("stressForm");
-    form.addEventListener("submit", async function(e) {
-        e.preventDefault(); // evitar redirección
-        const formData = new FormData(form);
+    document.getElementById("stressForm").addEventListener("submit", async function(e) {
+        e.preventDefault();
         const res = await fetch("/stress", {
             method: "POST",
-            body: formData
+            body: new FormData(this)
         });
         const data = await res.json();
         document.getElementById("stressValue").textContent = data.stress;
     });
-</script>
 
-<script>
-    async function updateStatus() {
-        try {
-            const res = await fetch("/status");
-            const data = await res.json();
-            document.getElementById("cpuUsage").textContent = data.cpu.toFixed(2);
-            document.getElementById("stressValue").textContent = data.stress;
-
-            const table = document.getElementById("vmTable");
-            table.innerHTML = "";
-            data.vms.forEach(vm => {
-                const row = `<tr>
-                    <td>${vm.name}</td>
-                    <td>${vm.ip}</td>
-                    <td>${vm.active ? "Activo" : "Inactivo"}</td>
-                </tr>`;
-                table.innerHTML += row;
-            });
-        } catch (e) {
-            console.error("Error obteniendo estado:", e);
-        }
+    function updateCPU() {
+        fetch("/cpu").then(r => r.json()).then(data => {
+            const cpu = data.cpu.toFixed(1);
+            const el = document.getElementById("cpuUsage");
+            el.textContent = cpu + "%";
+            const ind = document.getElementById("cpuIndicator");
+            ind.className = "cpu-indicator";
+            if (cpu < 30) ind.classList.add("cpu-low");
+            else if (cpu < 70) ind.classList.add("cpu-medium");
+            else ind.classList.add("cpu-high");
+        });
     }
-    setInterval(updateStatus, 5000); // actualizar cada 5 segundos
+    setInterval(updateCPU, 2000);
+
+    function updateStatus() {
+        fetch("/status").then(r => r.json()).then(data => {
+            document.getElementById("cpuUsage").textContent = data.cpu.toFixed(1) + "%";
+            const table = document.getElementById("vmTable");
+            if (data.vms.length === 0) {
+                table.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4"><i class="bi bi-cloud me-2"></i>Sin servidores activos</td></tr>';
+            } else {
+                table.innerHTML = data.vms.map(vm => `
+                    <tr>
+                        <td><i class="bi bi-server me-2"></i>${vm.name}</td>
+                        <td>${vm.ip}</td>
+                        <td><span class="vm-status ${vm.active ? 'vm-active' : 'vm-inactive'}">${vm.active ? 'Activo' : 'Inactivo'}</span></td>
+                        <td><span class="cpu-indicator cpu-low"></span>${vm.cpu || '--'}%</td>
+                    </tr>
+                `).join("");
+            }
+        });
+    }
+    setInterval(updateStatus, 5000);
+    updateStatus();
 </script>
 
 </body>
