@@ -1,25 +1,23 @@
 #!/bin/bash
 # HAProxy Remove Server Script
-# Usage: haproxy_remove.sh <server_name>
+# Usage: haproxy_remove.sh <server_name> <ip> <port>
 
 NAME=$1
+IP=$2
+PORT=$3
 
 HAPROXY_CFG="/etc/haproxy/haproxy.cfg"
 
 echo "[$(date)] Removing server $NAME from HAProxy"
 
-if [ ! -f "$HAPROXY_CFG" ]; then
-    echo "Error: HAProxy config not found at $HAPROXY_CFG"
-    exit 1
+if [ -f "$HAPROXY_CFG" ]; then
+    sed -i "/server $NAME/d" "$HAPROXY_CFG"
+    
+    # Recargar HAProxy
+    if command -v systemctl &> /dev/null; then
+        sudo systemctl reload haproxy 2>/dev/null || true
+    fi
 fi
 
-sed -i "/server $NAME/d" "$HAPROXY_CFG"
-
-if command -v systemctl &> /dev/null; then
-    systemctl reload haproxy 2>/dev/null || true
-elif command -v service &> /dev/null; then
-    service haproxy reload 2>/dev/null || true
-fi
-
-echo "Server $NAME removed successfully"
+echo "Server $NAME removed"
 exit 0

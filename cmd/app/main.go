@@ -36,8 +36,9 @@ type Response struct {
 }
 
 var (
-	stressLevel int
-	orch       *orchestrator.Orchestrator
+	stressLevel    int
+	orch        *orchestrator.Orchestrator
+	stressProc  *exec.Cmd
 )
 
 func main() {
@@ -159,24 +160,34 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
+var stressProcess *exec.Cmd
+
 func applyStress(level int) {
 	if level <= 0 {
-		if runtime.GOOS == "windows" {
-			exec.Command("taskkill", "/F", "/IM", "stress-ng.exe").Run()
-		} else {
-			exec.Command("pkill", "stress-ng").Run()
+		if stressProc != nil {
+			stressProc.Process.Kill()
 		}
+		exec.Command("pkill", "-9", "stress-ng").Run()
 		log.Println("Stress stopped")
 		return
 	}
 	log.Printf("Applying stress level %d", level)
 	
-	if runtime.GOOS == "windows" {
-		exec.Command("cmd", "/c", fmt.Sprintf("start /b stress-ng --cpu %d --timeout 120s", level)).Run()
-	} else {
-		cmd := exec.Command("stress-ng", "--cpu", fmt.Sprintf("%d", level), "--timeout", "120s", "--metrics")
-		cmd.Run()
+	if stressProc != nil {
+		stressProc.Process.Kill()
 	}
+	
+	cmd := exec.Command("stress-ng", 
+		"--cpu", fmt.Sprintf("%d", level),
+		"--timeout", "3600s",
+		"--backoff", "100000",
+	)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Start()
+	stressProc = cmd
+	
+	log.Printf("stress-ng started with PID %d", cmd.Process.Pid)
 }
 
 func scaleUp() {
@@ -193,6 +204,7 @@ func scaleUp() {
 	if runtime.GOOS == "windows" {
 		exec.Command("cmd", "/c", scriptPath, vmName).Run()
 	} else {
+		log.Printf("Running: sh %s %s", scriptPath, vmName)
 		exec.Command("sh", scriptPath, vmName).Run()
 	}
 }

@@ -127,13 +127,15 @@ func (o *Orchestrator) UpdateServerStatus(name string, active bool) {
 }
 
 func (o *Orchestrator) updateHAProxy(name, ip string, port int, action string) error {
-	scriptPath := fmt.Sprintf("./scripts/haproxy_%s.sh", name, ip, fmt.Sprintf("%d", port))
+	scriptPath := fmt.Sprintf("./scripts/haproxy_%s.sh", action)
+	
+	log.Printf("Running: sh %s %s %s %d", scriptPath, name, ip, port)
 	
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/c", scriptPath)
+		cmd = exec.Command("cmd", "/c", scriptPath, name, ip, fmt.Sprintf("%d", port))
 	} else {
-		cmd = exec.Command("sh", scriptPath)
+		cmd = exec.Command("sh", scriptPath, name, ip, fmt.Sprintf("%d", port))
 	}
 	
 	output, err := cmd.CombinedOutput()
