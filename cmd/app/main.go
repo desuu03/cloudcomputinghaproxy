@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -160,12 +161,22 @@ func main() {
 
 func applyStress(level int) {
 	if level <= 0 {
-		exec.Command("pkill", "-f", "stress-ng").Run()
+		if runtime.GOOS == "windows" {
+			exec.Command("taskkill", "/F", "/IM", "stress-ng.exe").Run()
+		} else {
+			exec.Command("pkill", "stress-ng").Run()
+		}
 		log.Println("Stress stopped")
 		return
 	}
 	log.Printf("Applying stress level %d", level)
-	exec.Command("sh", "-c", fmt.Sprintf("stress-ng --cpu %d --timeout 60s &", level)).Run()
+	
+	if runtime.GOOS == "windows" {
+		exec.Command("cmd", "/c", fmt.Sprintf("start /b stress-ng --cpu %d --timeout 120s", level)).Run()
+	} else {
+		cmd := exec.Command("stress-ng", "--cpu", fmt.Sprintf("%d", level), "--timeout", "120s", "--metrics")
+		cmd.Run()
+	}
 }
 
 func scaleUp() {
@@ -178,7 +189,12 @@ func scaleUp() {
 		log.Printf("Error adding server: %v", err)
 	}
 
-	exec.Command("sh", "./scripts/crear_vm.sh", vmName).Run()
+	scriptPath := "./scripts/crear_vm.sh"
+	if runtime.GOOS == "windows" {
+		exec.Command("cmd", "/c", scriptPath, vmName).Run()
+	} else {
+		exec.Command("sh", scriptPath, vmName).Run()
+	}
 }
 
 func scaleDown() {
@@ -193,5 +209,10 @@ func scaleDown() {
 		log.Printf("Error removing server: %v", err)
 	}
 
-	exec.Command("sh", "./scripts/eliminar_vm.sh", vm.Name).Run()
+	scriptPath := "./scripts/eliminar_vm.sh"
+	if runtime.GOOS == "windows" {
+		exec.Command("cmd", "/c", scriptPath, vm.Name).Run()
+	} else {
+		exec.Command("sh", scriptPath, vm.Name).Run()
+	}
 }

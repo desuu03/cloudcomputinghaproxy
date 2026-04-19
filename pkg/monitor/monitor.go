@@ -84,18 +84,37 @@ func StartMonitoring(onOverload, onUnderuse func()) func() {
 	go func() {
 		ticker := time.NewTicker(checkInterval)
 		defer ticker.Stop()
+		
+		highCount := 0
+		lowCount := 0
+		requiredCount := 3 // needing 3 consecutive readings before acting
+		
 		for {
 			select {
 			case <-stop:
 				return
 			case <-ticker.C:
 				usage := GetUsage()
+				
 				if usage > upperLimit {
-					log.Printf("CPU overload detected: %.1f%%", usage)
-					onOverload()
+					highCount++
+					lowCount = 0
+					if highCount >= requiredCount {
+						log.Printf("CPU overload sustained: %.1f%% (x%d)", usage, highCount)
+						onOverload()
+						highCount = 0
+					}
 				} else if usage < lowerLimit {
-					log.Printf("CPU underutilized: %.1f%%", usage)
-					onUnderuse()
+					lowCount++
+					highCount = 0
+					if lowCount >= requiredCount {
+						log.Printf("CPU underutilized sustained: %.1f%% (x%d)", usage, lowCount)
+						onUnderuse()
+						lowCount = 0
+					}
+				} else {
+					highCount = 0
+					lowCount = 0
 				}
 			}
 		}
